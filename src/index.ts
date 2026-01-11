@@ -1,5 +1,6 @@
-import { Client, GatewayIntentBits, Partials, ApplicationCommandOptionType, ChatInputCommandInteraction } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, ApplicationCommandOptionType, ChatInputCommandInteraction, AttachmentBuilder } from 'discord.js';
 import { LavalinkManager } from '@ramkrishna-js/framelink';
+import { ClassicCard } from '@ramkrishna-js/framecard';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -16,10 +17,10 @@ const client = new Client({
 const manager = new LavalinkManager({
     nodes: [
         {
-            host: 'lavalink.jirayu.net',
-            port: 443,
-            password: 'youshallnotpass',
-            secure: true,
+            host: process.env.LAVALINK_HOST || 'lavalink.jirayu.net',
+            port: parseInt(process.env.LAVALINK_PORT || '443'),
+            password: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
+            secure: process.env.LAVALINK_PORT === '443',
             version: 'v4'
         }
     ],
@@ -38,20 +39,38 @@ manager.on('nodeError', (node, error) => {
     console.log(`[Lavalink] Node ${node.options.host} error:`, error.message);
 });
 
-manager.on('trackStart', (player, track) => {
+manager.on('trackStart', async (player, track) => {
     const channel = client.channels.cache.get(player.textChannelId!) as any;
     if (channel) {
-        channel.send(`🎶 Now playing: **${track.info.title}** by ​${track.info.author}​`);
+        try {
+            const card = new ClassicCard()
+                .setTitle(track.info.title)
+                .setAuthor(track.info.author)
+                .setThumbnail(track.displayThumbnail || `https://img.youtube.com/vi/${track.info.identifier}/hqdefault.jpg`)
+                .setColor('#6fb8ff')
+                .setStartTime('0:00')
+                .setEndTime(formatTime(track.info.length))
+                .setProgress(0);
+
+            const buffer = await card.build();
+            const attachment = new AttachmentBuilder(buffer, { name: 'card.png' });
+
+            channel.send({ 
+                content: `🎶 Now playing: **${track.info.title}**`,
+                files: [attachment] 
+            });
+        } catch (error) {
+            console.error('[Bot] Failed to generate card:', error);
+            channel.send(`🎶 Now playing: **${track.info.title}** by ​${track.info.author}​`);
+        }
     }
 });
 
-manager.on('queueEnd', (player) => {
-    const channel = client.channels.cache.get(player.textChannelId!) as any;
-    if (channel) {
-        channel.send('✅ Queue ended.');
-    }
-    player.destroy();
-});
+function formatTime(ms: number) {
+    const seconds = Math.floor((ms / 1000) % 60);
+    const minutes = Math.floor((ms / (1000 * 60)) % 60);
+    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
 
 // Handle raw voice updates for Lavalink
 client.on('raw', (d) => manager.handleVoiceUpdate(d));

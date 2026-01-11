@@ -16,10 +16,10 @@ const client = new Client({
 const manager = new LavalinkManager({
     nodes: [
         {
-            host: process.env.LAVALINK_HOST || 'localhost',
-            port: parseInt(process.env.LAVALINK_PORT || '2333'),
-            password: process.env.LAVALINK_PASSWORD || 'youshallnotpass',
-            secure: false,
+            host: 'lavalink.jirayu.net',
+            port: 443,
+            password: 'youshallnotpass',
+            secure: true,
             version: 'v4'
         }
     ],

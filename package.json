@@ -2,18 +2,18 @@
   "name": "framelink-music-bot",
   "version": "1.0.0",
   "description": "",
+  "type": "module",
   "main": "index.js",
   "scripts": {
-    "dev": "ts-node src/index.ts",
+    "dev": "ts-node-esm src/index.ts",
     "start": "tsc && node dist/index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@ramkrishna-js/framelink": "^1.0.2",
+    "@ramkrishna-js/framelink": "^1.0.6",
     "discord.js": "^14.25.1",
     "dotenv": "^17.2.3"
   },

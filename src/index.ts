@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials, ApplicationCommandOptionType, InteractionType } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, ApplicationCommandOptionType, ChatInputCommandInteraction } from 'discord.js';
 import { LavalinkManager } from '@ramkrishna-js/framelink';
 import dotenv from 'dotenv';
 
@@ -58,10 +58,10 @@ client.on('raw', (d) => manager.handleVoiceUpdate(d));
 
 client.on('ready', async () => {
     console.log(`[Bot] Logged in as ${client.user?.tag}`);
-    manager.init(client.user?.id!);
+    manager.init(client.user?.id!); 
 
     // Register Slash Commands
-    const commands = [
+    const commands: any[] = [
         {
             name: 'play',
             description: 'Play a song or playlist',
@@ -100,96 +100,113 @@ client.on('ready', async () => {
         },
     ];
 
-    await client.application?.commands.set(commands);
-    console.log('[Bot] Slash commands registered.');
+    try {
+        await client.application?.commands.set(commands);
+        console.log('[Bot] Slash commands registered.');
+    } catch (error) {
+        console.error('[Bot] Failed to register slash commands:', error);
+    }
 });
 
 client.on('interactionCreate', async (interaction) => {
     if (!interaction.isChatInputCommand()) return;
-    if (!interaction.guild) return;
+    if (!interaction.guildId) return;
 
     const { commandName, options, member, guildId, channelId } = interaction;
     const memberVoiceChannel = (member as any)?.voice.channel;
 
-    if (commandName === 'play') {
-        await interaction.deferReply();
-        const query = options.getString('query', true);
+    try {
+        if (commandName === 'play') {
+            await interaction.deferReply();
+            const query = options.getString('query', true);
 
-        if (!memberVoiceChannel) {
-            return interaction.editReply('You need to be in a voice channel!');
+            if (!memberVoiceChannel) {
+                return interaction.editReply('You need to be in a voice channel!');
+            }
+
+            let player = manager.players.get(guildId);
+
+            if (!player) {
+                player = manager.createPlayer({
+                    guildId: guildId,
+                    voiceChannelId: memberVoiceChannel.id,
+                    textChannelId: channelId!,
+                    autoplay: true
+                });
+                player.connect({ voiceChannelId: memberVoiceChannel.id });
+            }
+
+            const res = await manager.search(query, 'yt');
+            
+            if (!res || !res.tracks || !res.tracks.length) {
+                return interaction.editReply('No results found.');
+            }
+
+            if (res.loadType === 'playlist' || res.loadType === 'PLAYLIST_LOADED') {
+                player.queue.add(res.tracks);
+                await interaction.editReply(`Added playlist **${res.playlistInfo?.name || 'Unknown'}** with ${res.tracks.length} tracks.`);
+            } else {
+                player.queue.add(res.tracks[0]);
+                await interaction.editReply(`Added to queue: **${res.tracks[0].info.title}**`);
+            }
+
+            if (!player.isPlaying) await player.play();
         }
 
-        let player = manager.players.get(guildId);
-
-        if (!player) {
-            player = manager.createPlayer({
-                guildId: guildId,
-                voiceChannelId: memberVoiceChannel.id,
-                textChannelId: channelId!,
-                autoplay: true
-            });
-            player.connect({ voiceChannelId: memberVoiceChannel.id });
+        if (commandName === 'skip') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            player.skip();
+            await interaction.reply('⏭️ Skipped.');
         }
 
-        const res = await manager.search(query, 'yt');
-        
-        if (!res.tracks.length) {
-            return interaction.editReply('No results found.');
+        if (commandName === 'stop') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            player.destroy();
+            await interaction.reply('🛑 Stopped and left.');
         }
 
-        if (res.loadType === 'PLAYLIST_LOADED') {
-            player.queue.add(res.tracks);
-            await interaction.editReply(`Added playlist **${res.playlistInfo.name}** with ${res.tracks.length} tracks.`);
+        if (commandName === 'volume') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            
+            const amount = options.getInteger('amount', true);
+            if (amount < 0 || amount > 1000) {
+                return interaction.reply({ content: 'Please provide a volume between 0 and 1000.', ephemeral: true });
+            }
+            
+            player.setVolume(amount);
+            await interaction.reply(`🔊 Volume set to ${amount}.`);
+        }
+
+        if (commandName === 'queue') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            
+            const queueList = player.queue.tracks
+                .map((t, i) => `${i + 1}. ${t.info.title}`)
+                .slice(0, 10)
+                .join('\n');
+
+            const current = player.queue.current 
+                ? `Now Playing: **${player.queue.current.info.title}**\n\n` 
+                : '';
+
+            await interaction.reply(`**Current Queue:**\n${current}${queueList || 'Empty'}`);
+        }
+    } catch (error: any) {
+        console.error(`[Error] Command ${commandName} failed:`, error);
+        const content = `An error occurred: ${error.message}`;
+        if (interaction.deferred || interaction.replied) {
+            await interaction.editReply(content);
         } else {
-            player.queue.add(res.tracks[0]);
-            await interaction.editReply(`Added to queue: **${res.tracks[0].info.title}**`);
+            await interaction.reply({ content, ephemeral: true });
         }
-
-        if (!player.isPlaying) player.play();
-    }
-
-    if (commandName === 'skip') {
-        const player = manager.players.get(guildId);
-        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
-        player.skip();
-        interaction.reply('⏭️ Skipped.');
-    }
-
-    if (commandName === 'stop') {
-        const player = manager.players.get(guildId);
-        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
-        player.destroy();
-        interaction.reply('🛑 Stopped and left.');
-    }
-
-    if (commandName === 'volume') {
-        const player = manager.players.get(guildId);
-        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
-        
-        const amount = options.getInteger('amount', true);
-        if (amount < 0 || amount > 1000) {
-            return interaction.reply({ content: 'Please provide a volume between 0 and 1000.', ephemeral: true });
-        }
-        
-        player.setVolume(amount);
-        interaction.reply(`🔊 Volume set to ${amount}.`);
-    }
-
-    if (commandName === 'queue') {
-        const player = manager.players.get(guildId);
-        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
-        
-        const queueList = player.queue.tracks
-            .map((t, i) => `${i + 1}. ${t.info.title}`)
-            .slice(0, 10)
-            .join('\n');
-
-        const current = player.queue.current 
-            ? `Now Playing: **${player.queue.current.info.title}**\n\n` 
-            : '';
-
-        interaction.reply(`**Current Queue:**\n${current}${queueList || 'Empty'}`);
     }
 });
+
+client.on('error', (error) => console.error('[Discord] Client Error:', error));
+process.on('unhandledRejection', (error) => console.error('[Process] Unhandled Rejection:', error));
 
 client.login(process.env.DISCORD_TOKEN);

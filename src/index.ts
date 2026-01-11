@@ -117,6 +117,26 @@ client.on('ready', async () => {
                 },
             ],
         },
+        {
+            name: 'bassboost',
+            description: 'Toggle bassboost filter',
+        },
+        {
+            name: 'nightcore',
+            description: 'Toggle nightcore filter',
+        },
+        {
+            name: 'vaporwave',
+            description: 'Toggle vaporwave filter',
+        },
+        {
+            name: '8d',
+            description: 'Toggle 8D audio filter',
+        },
+        {
+            name: 'clearfilters',
+            description: 'Clear all active filters',
+        },
     ];
 
     try {
@@ -197,6 +217,41 @@ client.on('interactionCreate', async (interaction) => {
             
             player.setVolume(amount);
             await interaction.reply(`🔊 Volume set to ${amount}.`);
+        }
+
+        if (commandName === 'bassboost') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            player.setBassboost(!player.filters.equalizer);
+            await interaction.reply(`🎧 Bassboost ${!player.filters.equalizer ? 'enabled' : 'disabled'}.`);
+        }
+
+        if (commandName === 'nightcore') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            player.setNightcore(!player.filters.timescale);
+            await interaction.reply(`🎧 Nightcore ${!player.filters.timescale ? 'enabled' : 'disabled'}.`);
+        }
+
+        if (commandName === 'vaporwave') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            player.setVaporwave(!player.filters.timescale);
+            await interaction.reply(`🎧 Vaporwave ${!player.filters.timescale ? 'enabled' : 'disabled'}.`);
+        }
+
+        if (commandName === '8d') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            player.setEightD(!player.filters.rotation);
+            await interaction.reply(`🎧 8D Audio ${!player.filters.rotation ? 'enabled' : 'disabled'}.`);
+        }
+
+        if (commandName === 'clearfilters') {
+            const player = manager.players.get(guildId);
+            if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+            await player.clearFilters();
+            await interaction.reply('🎧 All filters cleared.');
         }
 
         if (commandName === 'queue') {

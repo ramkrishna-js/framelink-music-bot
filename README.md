@@ -25,11 +25,11 @@ A simple Discord music bot built using the `@ramkrishna-js/framelink` library.
    ```
 
 ## Commands
-- `!play <query>` - Play a song or playlist.
-- `!skip` - Skip the current song.
-- `!stop` - Stop playback and leave the voice channel.
-- `!queue` - View the current queue.
-- `!volume <0-1000>` - Change the volume.
+- `/play <query>` - Play a song or playlist.
+- `/skip` - Skip the current song.
+- `/stop` - Stop playback and leave the voice channel.
+- `/queue` - View the current queue.
+- `/volume <0-1000>` - Change the volume.
 
 ## License
 MIT

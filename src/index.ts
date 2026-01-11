@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials, Collection } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, ApplicationCommandOptionType, InteractionType } from 'discord.js';
 import { LavalinkManager } from '@ramkrishna-js/framelink';
 import dotenv from 'dotenv';
 
@@ -7,11 +7,9 @@ dotenv.config();
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
         GatewayIntentBits.GuildVoiceStates,
-        GatewayIntentBits.MessageContent,
     ],
-    partials: [Partials.Channel, Partials.Message, Partials.GuildMember],
+    partials: [Partials.Channel, Partials.GuildMember],
 });
 
 // Initialize Lavalink Manager
@@ -43,7 +41,7 @@ manager.on('nodeError', (node, error) => {
 manager.on('trackStart', (player, track) => {
     const channel = client.channels.cache.get(player.textChannelId!) as any;
     if (channel) {
-        channel.send(`🎶 Now playing: **${track.info.title}** by ⁠${track.info.author}⁠`);
+        channel.send(`🎶 Now playing: **${track.info.title}** by ​${track.info.author}​`);
     }
 });
 
@@ -58,83 +56,139 @@ manager.on('queueEnd', (player) => {
 // Handle raw voice updates for Lavalink
 client.on('raw', (d) => manager.handleVoiceUpdate(d));
 
-client.on('ready', () => {
+client.on('ready', async () => {
     console.log(`[Bot] Logged in as ${client.user?.tag}`);
     manager.init(client.user?.id!);
+
+    // Register Slash Commands
+    const commands = [
+        {
+            name: 'play',
+            description: 'Play a song or playlist',
+            options: [
+                {
+                    name: 'query',
+                    description: 'The song name or link',
+                    type: ApplicationCommandOptionType.String,
+                    required: true,
+                },
+            ],
+        },
+        {
+            name: 'skip',
+            description: 'Skip the current song',
+        },
+        {
+            name: 'stop',
+            description: 'Stop playback and leave',
+        },
+        {
+            name: 'queue',
+            description: 'View the current queue',
+        },
+        {
+            name: 'volume',
+            description: 'Change the volume',
+            options: [
+                {
+                    name: 'amount',
+                    description: 'Volume level (0-1000)',
+                    type: ApplicationCommandOptionType.Integer,
+                    required: true,
+                },
+            ],
+        },
+    ];
+
+    await client.application?.commands.set(commands);
+    console.log('[Bot] Slash commands registered.');
 });
 
-client.on('messageCreate', async (message) => {
-    if (message.author.bot || !message.guild) return;
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+    if (!interaction.guild) return;
 
-    const prefix = '!';
-    if (!message.content.startsWith(prefix)) return;
+    const { commandName, options, member, guildId, channelId } = interaction;
+    const memberVoiceChannel = (member as any)?.voice.channel;
 
-    const args = message.content.slice(prefix.length).trim().split(/ +/g);
-    const command = args.shift()?.toLowerCase();
+    if (commandName === 'play') {
+        await interaction.deferReply();
+        const query = options.getString('query', true);
 
-    if (command === 'play') {
-        const query = args.join(' ');
-        if (!query) return message.reply('Please provide a song name or link.');
+        if (!memberVoiceChannel) {
+            return interaction.editReply('You need to be in a voice channel!');
+        }
 
-        const vc = message.member?.voice.channel;
-        if (!vc) return message.reply('You need to be in a voice channel!');
-
-        let player = manager.players.get(message.guild.id);
+        let player = manager.players.get(guildId);
 
         if (!player) {
             player = manager.createPlayer({
-                guildId: message.guild.id,
-                voiceChannelId: vc.id,
-                textChannelId: message.channel.id,
+                guildId: guildId,
+                voiceChannelId: memberVoiceChannel.id,
+                textChannelId: channelId!,
                 autoplay: true
             });
-            player.connect({ voiceChannelId: vc.id });
+            player.connect({ voiceChannelId: memberVoiceChannel.id });
         }
 
         const res = await manager.search(query, 'yt');
         
-        if (!res.tracks.length) return message.reply('No results found.');
+        if (!res.tracks.length) {
+            return interaction.editReply('No results found.');
+        }
 
         if (res.loadType === 'PLAYLIST_LOADED') {
             player.queue.add(res.tracks);
-            message.reply(`Added playlist **${res.playlistInfo.name}** with ${res.tracks.length} tracks.`);
+            await interaction.editReply(`Added playlist **${res.playlistInfo.name}** with ${res.tracks.length} tracks.`);
         } else {
             player.queue.add(res.tracks[0]);
-            message.reply(`Added to queue: **${res.tracks[0].info.title}**`);
+            await interaction.editReply(`Added to queue: **${res.tracks[0].info.title}**`);
         }
 
         if (!player.isPlaying) player.play();
     }
 
-    if (command === 'skip') {
-        const player = manager.players.get(message.guild.id);
-        if (!player) return message.reply('No music playing.');
+    if (commandName === 'skip') {
+        const player = manager.players.get(guildId);
+        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
         player.skip();
-        message.reply('⏭️ Skipped.');
+        interaction.reply('⏭️ Skipped.');
     }
 
-    if (command === 'stop') {
-        const player = manager.players.get(message.guild.id);
-        if (!player) return message.reply('No music playing.');
+    if (commandName === 'stop') {
+        const player = manager.players.get(guildId);
+        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
         player.destroy();
-        message.reply('🛑 Stopped and left.');
+        interaction.reply('🛑 Stopped and left.');
     }
 
-    if (command === 'volume') {
-        const player = manager.players.get(message.guild.id);
-        if (!player) return message.reply('No music playing.');
-        const vol = parseInt(args[0]);
-        if (isNaN(vol) || vol < 0 || vol > 1000) return message.reply('Please provide a volume between 0 and 1000.');
-        player.setVolume(vol);
-        message.reply(`🔊 Volume set to ${vol}.`);
-    }
-
-    if (command === 'queue') {
-        const player = manager.players.get(message.guild.id);
-        if (!player) return message.reply('No music playing.');
+    if (commandName === 'volume') {
+        const player = manager.players.get(guildId);
+        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
         
-        const queue = player.queue.tracks.map((t, i) => `${i + 1}. ${t.info.title}`).slice(0, 10).join('\n');
-        message.reply(`**Current Queue:**\n${player.queue.current ? `Now Playing: ${player.queue.current.info.title}\n` : ''}${queue || 'Empty'}`);
+        const amount = options.getInteger('amount', true);
+        if (amount < 0 || amount > 1000) {
+            return interaction.reply({ content: 'Please provide a volume between 0 and 1000.', ephemeral: true });
+        }
+        
+        player.setVolume(amount);
+        interaction.reply(`🔊 Volume set to ${amount}.`);
+    }
+
+    if (commandName === 'queue') {
+        const player = manager.players.get(guildId);
+        if (!player) return interaction.reply({ content: 'No music playing.', ephemeral: true });
+        
+        const queueList = player.queue.tracks
+            .map((t, i) => `${i + 1}. ${t.info.title}`)
+            .slice(0, 10)
+            .join('\n');
+
+        const current = player.queue.current 
+            ? `Now Playing: **${player.queue.current.info.title}**\n\n` 
+            : '';
+
+        interaction.reply(`**Current Queue:**\n${current}${queueList || 'Empty'}`);
     }
 });
 
